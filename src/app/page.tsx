@@ -1,9 +1,8 @@
 "use client";
 
 import { Stack, Typography, Divider } from "@mui/material";
-import DashboardStats from "@/components/dashboard/DashboardStats";
+import DashboardAnalytics from "@/components/dashboard/DashboardStats";
 import RecentDrones from "@/components/dashboard/RecentDrones";
-import DashboardAnalytics from "@/components/dashboard/DashboardAnalytics"; 
 import DronePieChart from "@/components/dashboard/DronePieChart";
 import { useWebSocket } from "@/hooks/useWebSocket";
 
@@ -15,14 +14,14 @@ export default function DashboardPage() {
         Drone Dashboard
       </Typography>
 
-      <DashboardStats />
+      {/* <DashboardStats /> */}
       <Divider sx={{ my: 4 }} />
 
       <RecentDrones />
 
+        <DashboardAnalytics />
       <Stack direction="column" spacing={2} sx={{ mt: 4 }} width={"100%"}>
         <DronePieChart />
-        <DashboardAnalytics />
       </Stack>
 
 

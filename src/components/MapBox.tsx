@@ -1,308 +1,191 @@
 "use client";
 
-import { useEffect, useRef, useState, useMemo } from "react";
-import { Box, Snackbar, Typography, useMediaQuery, useTheme, IconButton } from "@mui/material";
-import mapboxgl, { GeoJSONSource, Marker } from "mapbox-gl";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Box, Snackbar, Typography, IconButton, useMediaQuery, useTheme } from "@mui/material";
+import { ChevronRight } from "@mui/icons-material";
+import mapboxgl from "mapbox-gl";
+import "mapbox-gl/dist/mapbox-gl.css";
+
 import DroneList from "@/components/map/DroneList";
 import DronePopup from "@/components/map/DronePopup";
-import { ChevronRight } from "@mui/icons-material";
-import "mapbox-gl/dist/mapbox-gl.css";
 import { useDroneStore } from "@/store/useDroneStore";
+
+import { useFleets } from "@/hooks/useFleets";
+import { useMapbox } from "@/hooks/useMapbox";
+import { isAllowed, makeScheduler, toDegrees } from "@/utils/mapUtils";
+import { DEFAULT_CENTER, MAX_PATH_LENGTH } from "@/utils/constants";
+import type { Feature } from "@/types/types";
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN!;
 
-const MAX_PATH_LENGTH = 200;
-
-type Feature = {
-  type: "Feature";
-  properties: {
-    serial: string;
-    registration: string; // e.g. SD-CB
-    Name?: string;
-    altitude?: number;
-    pilot?: string;
-    organization?: string;
-    yaw?: number;
-  };
-  geometry: {
-    type: "Point";
-    coordinates: [number, number]; // [lng, lat]
-  };
-  path?: [number, number][]; // optional (not used for grouping)
-  startTime?: number;
-};
-
 export default function MapBox() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<mapboxgl.Map | null>(null);
 
-  // Key by REGISTRATION now (one marker & path per registration)
-  const markersRef = useRef<Record<string, Marker>>({});
-  const sourcesRef = useRef<Record<string, boolean>>({});
-
-  const [mapLoaded, setMapLoaded] = useState(false);
-  const [mapInteracting, setMapInteracting] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [snackOpen, setSnackOpen] = useState(false);
-  const toggleSidebar = () => setSidebarOpen((v) => !v);
+  const toggleSidebar = () => setSidebarOpen(v => !v);
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
-  // ==== STORE ==== //
-  const dronesFromStore = useDroneStore((s) => s.drones);
-  const selectedSerial = useDroneStore((s) => s.selectedSerial); // kept for backwards-compat
-  const setSelectedSerial = useDroneStore((s) => s.setSelectedSerial);
-  const setHoveredDrone = useDroneStore((s) => s.setHoveredDrone);
-  const setPopupPosition = useDroneStore((s) => s.setPopupPosition);
+  // ==== STORE ====
+  const dronesFromStore  = useDroneStore(s => s.drones);
+  const selectedSerial   = useDroneStore(s => s.selectedSerial);
+  const setSelectedSerial = useDroneStore(s => s.setSelectedSerial);
+  const setHoveredDrone   = useDroneStore(s => s.setHoveredDrone);
+  const setPopupPosition  = useDroneStore(s => s.setPopupPosition);
+  const hoveredDrone      = useDroneStore(s => s.hoveredDrone);
 
-  // Normalize to array whatever the store shape is (array or object map)
-  const droneFeatures: Feature[] = useMemo(() => {
-    if (!dronesFromStore) return [] as Feature[];
-    if (Array.isArray(dronesFromStore)) return dronesFromStore as Feature[];
-    return Object.values(dronesFromStore as Record<string, Feature>);
-  }, [dronesFromStore]);
+  // Fleets + refs (prevents stale closures inside map handlers)
+  const { fleets, fleetsRef } = useFleets(dronesFromStore);
+  const hoveredRef = useRef<Feature | null>(null);
+  useEffect(() => { hoveredRef.current = (hoveredDrone as any) ?? null; }, [hoveredDrone]);
 
-  // Group by registration: each registration can have many records (the path)
-  const fleets = useMemo(() => {
-    const byReg = new Map<string, Feature[]>();
-    for (const f of droneFeatures) {
-      const reg = f.properties.registration;
-      if (!byReg.has(reg)) byReg.set(reg, []);
-      byReg.get(reg)!.push(f);
-    }
-
-    // Sort each registration's points by startTime (fallback to insertion order)
-    const result = Array.from(byReg.entries()).map(([registration, features]) => {
-      features.sort((a, b) => (a.startTime ?? 0) - (b.startTime ?? 0));
-      const latest = features[features.length - 1];
-      const pathCoords = features
-        .slice(-MAX_PATH_LENGTH)
-        .map((f) => f.geometry.coordinates);
-      return { registration, latest, pathCoords };
-    });
-    return result;
-  }, [droneFeatures]);
-
-  // Active count now based on unique registrations that start with SD-B
-  const activeCount = useMemo(
-    () => fleets.filter((f) => f.latest.properties.registration.startsWith("SD-B")).length,
+  const initialCenter = useMemo<[number, number]>(
+    () => (fleets.length ? fleets[0].latest.geometry.coordinates : DEFAULT_CENTER),
     [fleets]
   );
 
-  // ====== INIT MAP ======
-  useEffect(() => {
-    if (!containerRef.current) return;
-
-    const centerLngLat: [number, number] = fleets.length
-      ? fleets[0].latest.geometry.coordinates
-      : [35.957, 31.906];
-
-    const map = new mapboxgl.Map({
-      container: containerRef.current,
-      style: "mapbox://styles/mapbox/dark-v11",
-      center: centerLngLat,
-      zoom: 12,
+  // Map setup (sources, layers, handlers)
+  const { mapRef, mapLoaded, dronesSourceRef, pathsSourceRef, dronesDataRef, pathsDataRef } =
+    useMapbox({
+      containerRef,
+      initialCenter,
+      fleetsRef,
+      hoveredRef,
+      setHoveredDrone,
+      setPopupPosition,
+      setSelectedSerial,
     });
 
-    mapRef.current = map;
-    map.on("load", () => setMapLoaded(true));
+  // Counts + snackbar
+  const activeCount = useMemo(() => fleets.filter(f => isAllowed(f.registration)).length, [fleets]);
+  useEffect(() => { setSnackOpen(true); }, [activeCount]);
 
-    // Map interaction state — set once
-    map.on("dragstart", () => setMapInteracting(true));
-    map.on("dragend", () => setMapInteracting(false));
-    map.on("zoomstart", () => setMapInteracting(true));
-    map.on("zoomend", () => setMapInteracting(false));
+  // Batch buffers + upsert helpers
+  const droneIndexRef = useRef<Map<string, number>>(new Map());
+  const pathIndexRef  = useRef<Map<string, number>>(new Map());
+  const flush = useRef(makeScheduler()).current;
 
-    return () => {
-      map.remove();
-      mapRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  function upsertDrone(reg: string, serial: string, lng: number, lat: number, yawDeg: number) {
+    const dronesData = dronesDataRef.current;
+    const index = droneIndexRef.current;
+    let i = index.get(reg);
 
-  // ====== RENDER / UPDATE MARKERS & PATHS (BY REGISTRATION) ======
+    const map = mapRef.current;
+    const displayDeg = map ? yawDeg - map.getBearing() : yawDeg;
+
+    if (i == null) {
+      i = dronesData.features.push({
+        type: "Feature",
+        id: reg,
+        properties: { id: reg, registration: reg, serial, allowed: isAllowed(reg) ? 1 : 0, rotation: displayDeg },
+        geometry: { type: "Point", coordinates: [lng, lat] },
+      }) - 1;
+      index.set(reg, i);
+    } else {
+      const feature = dronesData.features[i] as any;
+      feature.geometry.coordinates = [lng, lat];
+      feature.properties.rotation = displayDeg;
+    }
+  }
+
+  function upsertPath(reg: string, coords: [number, number][]) {
+    const pathsData = pathsDataRef.current;
+    const index = pathIndexRef.current;
+    let i = index.get(reg);
+
+    if (i == null) {
+      i = pathsData.features.push({
+        type: "Feature",
+        id: reg,
+        properties: { registration: reg, allowed: isAllowed(reg) ? 1 : 0 },
+        geometry: { type: "LineString", coordinates: coords.slice(-MAX_PATH_LENGTH) },
+      }) - 1;
+      index.set(reg, i);
+    } else {
+      const arr = (pathsData.features[i] as any).geometry.coordinates as [number, number][];
+      arr.length = 0;
+      const start = Math.max(0, coords.length - MAX_PATH_LENGTH);
+      for (let k = start; k < coords.length; k++) arr.push(coords[k]);
+    }
+  }
+
+  // Rebuild batches when fleets change
+  useEffect(() => {
+    if (!mapLoaded) return;
+
+    droneIndexRef.current.clear();
+    pathIndexRef.current.clear();
+    dronesDataRef.current.features = [];
+    pathsDataRef.current.features = [];
+
+    for (const f of fleets) {
+      const [lng, lat] = f.latest.geometry.coordinates;
+      const yawDeg = toDegrees(f.latest.properties.yaw ?? 0);
+      upsertDrone(f.registration, f.latest.properties.serial, lng, lat, yawDeg);
+      upsertPath(f.registration, f.pathCoords);
+    }
+
+    flush(() => {
+      dronesSourceRef.current?.setData(dronesDataRef.current as any);
+      pathsSourceRef.current?.setData(pathsDataRef.current as any);
+    });
+  }, [fleets, mapLoaded, flush, dronesSourceRef, pathsSourceRef, dronesDataRef, pathsDataRef]);
+
+  // Fly to selection
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded || !selectedSerial) return;
+    const fleet = fleets.find(f => f.latest.properties.serial === selectedSerial);
+    const target = fleet?.latest?.geometry.coordinates;
+    if (!target) return;
+    requestAnimationFrame(() => {
+      map.flyTo({ center: target, zoom: 15, speed: 1.2, essential: true });
+    });
+  }, [selectedSerial, mapLoaded, fleets, mapRef]);
+
+  // Keep icon rotation aligned with bearing
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded) return;
 
-    const currentRegs = new Set(fleets.map((f) => f.registration));
-
-    // Remove markers/sources for registrations that disappeared
-    Object.keys(markersRef.current).forEach((reg) => {
-      if (!currentRegs.has(reg)) {
-        markersRef.current[reg].remove();
-        delete markersRef.current[reg];
+    const updateRotations = () => {
+      for (const f of fleetsRef.current) {
+        const yawDeg = toDegrees(f.latest.properties.yaw ?? 0);
+        const displayDeg = yawDeg - map.getBearing();
+        const i = droneIndexRef.current.get(f.registration);
+        if (i !== undefined) (dronesDataRef.current.features[i] as any).properties.rotation = displayDeg;
       }
-    });
-    Object.keys(sourcesRef.current).forEach((reg) => {
-      if (!currentRegs.has(reg)) {
-        const srcId = `path-${reg}`;
-        const layerId = `path-${reg}`;
-        if (map.getLayer(layerId)) map.removeLayer(layerId);
-        if (map.getSource(srcId)) map.removeSource(srcId);
-        delete sourcesRef.current[reg];
-      }
-    });
+      dronesSourceRef.current?.setData(dronesDataRef.current as any);
+    };
 
-    // Create / update per registration
-    fleets.forEach(({ registration, latest, pathCoords }) => {
-      const isAllowed = registration.startsWith("SD-B");
-      const [lng, lat] = latest.geometry.coordinates;
-      const yaw = latest.properties.yaw ?? 0;
-
-      // Marker (per registration)
-      if (!markersRef.current[registration]) {
-        const el = document.createElement("div");
-        el.className = "drone-marker";
-        el.style.cssText = `width:32px;height:32px;border-radius:50%;background:${
-          isAllowed ? "#FFD700" : "#FF0000"
-        };display:flex;align-items:center;justify-content:center`;
-
-        const icon = document.createElement("div");
-        icon.style.cssText =
-          "width:18px;height:18px;background:url(/drone.svg) no-repeat center/contain;filter:brightness(0) invert(1)";
-        icon.style.transform = `rotate(${yaw}deg)`;
-        el.appendChild(icon);
-
-        el.addEventListener("mouseenter", () => {
-          const screen = map.project([lng, lat]);
-          // Pass the LATEST feature for this registration to the popup/hover
-          setHoveredDrone(latest as any);
-          setPopupPosition({ x: screen.x, y: screen.y });
-        });
-        el.addEventListener("mouseleave", () => {
-          setHoveredDrone(null as any);
-          setPopupPosition(null as any);
-        });
-        el.addEventListener("click", () => {
-          // Keep API: we still set the serial, but from the latest point in this registration
-          setSelectedSerial(latest.properties.serial);
-        });
-
-        markersRef.current[registration] = new mapboxgl.Marker({ element: el })
-          .setLngLat([lng, lat])
-          .addTo(map);
-      } else {
-        markersRef.current[registration].setLngLat([lng, lat]);
-        const icon = markersRef.current[registration].getElement().firstChild as HTMLElement;
-        if (icon) icon.style.transform = `rotate(${yaw}deg)`;
-      }
-
-      // Path source + layer (per registration)
-      const srcId = `path-${registration}`;
-      const layerId = `path-${registration}`;
-      const data = {
-        type: "Feature" as const,
-        geometry: { type: "LineString" as const, coordinates: pathCoords },
-        properties: {},
-      };
-
-      if (!sourcesRef.current[registration]) {
-        if (!map.getSource(srcId)) {
-          map.addSource(srcId, { type: "geojson", data });
-        }
-        if (!map.getLayer(layerId)) {
-          map.addLayer({
-            id: layerId,
-            type: "line",
-            source: srcId,
-            layout: { "line-join": "round", "line-cap": "round" },
-            paint: {
-              "line-color": isAllowed ? "#FFD700" : "#FF0000",
-              "line-width": 2,
-              "line-opacity": 0.6,
-            },
-          });
-        }
-        sourcesRef.current[registration] = true;
-      } else {
-        (map.getSource(srcId) as GeoJSONSource)?.setData(data as any);
-      }
-    });
-  }, [fleets, mapLoaded, setHoveredDrone, setPopupPosition, setSelectedSerial]);
-
-  // Fly to the LATEST point of whichever serial was selected from the list
-  // (If you prefer, change the store to selectedRegistration and use that here.)
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapLoaded || !selectedSerial || mapInteracting) return;
-
-    // Find the registration that currently contains this serial (latest point)
-    const fleet = fleets.find((f) => f.latest.properties.serial === selectedSerial);
-    const target = fleet?.latest?.geometry.coordinates;
-    if (!target) return;
-
-    requestAnimationFrame(() => {
-      map.flyTo({ center: target, zoom: 15, speed: 1.2, essential: true });
-    });
-  }, [selectedSerial, fleets, mapLoaded, mapInteracting]);
-
-  // Show snackbar whenever activeCount changes
-  useEffect(() => {
-    setSnackOpen(true);
-  }, [activeCount]);
+    updateRotations();
+    map.on("rotate", updateRotations);
+    return () => { map.off("rotate", updateRotations); };
+  }, [mapLoaded, mapRef, fleetsRef, dronesSourceRef, dronesDataRef]);
 
   return (
     <Box sx={{ display: "flex", height: "100vh" }}>
       <Box ref={containerRef} sx={{ flexGrow: 1, height: "100%" }} />
-
       {!sidebarOpen && (
         <Box sx={{ position: "absolute", top: 80, left: 0, zIndex: 1300 }}>
           <IconButton
             onClick={toggleSidebar}
-            sx={{
-              backgroundColor: "#1F2327",
-              borderRadius: "0 8px 8px 0",
-              color: "#fff",
-              width: "36px",
-              height: "36px",
-              boxShadow: 3,
-              "&:hover": { backgroundColor: "#333" },
-            }}
+            sx={{ backgroundColor: "#1F2327", borderRadius: "0 8px 8px 0", color: "#fff", width: 36, height: 36, boxShadow: 3, "&:hover": { backgroundColor: "#333" } }}
           >
             <ChevronRight />
           </IconButton>
         </Box>
       )}
-
       <DroneList open={sidebarOpen} onToggle={toggleSidebar} />
       <DronePopup />
-
-      <Snackbar
-        open={snackOpen}
-        autoHideDuration={3000}
-        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-      >
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            backgroundColor: "#D9D9D9",
-            padding: 1,
-            borderRadius: 1,
-            gap: 1,
-          }}
-        >
-          <Box
-            sx={{
-              bgcolor: "#1F2327",
-              width: "32px",
-              height: "32px",
-              borderRadius: "50%",
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              fontSize: "14px",
-              color: "#fff",
-              ml: 2,
-            }}
-          >
+      <Snackbar open={snackOpen} autoHideDuration={3000} anchorOrigin={{ vertical: "bottom", horizontal: "right" }}>
+        <Box sx={{ display: "flex", alignItems: "center", backgroundColor: "#D9D9D9", p: 1, borderRadius: 1, gap: 1 }}>
+          <Box sx={{ bgcolor: "#1F2327", width: 32, height: 32, borderRadius: "50%", display: "flex", justifyContent: "center", alignItems: "center", fontSize: 14, color: "#fff", ml: 2 }}>
             {activeCount}
           </Box>
-          <Typography variant="body2" color="#3C4248">
-            Drone Flying
-          </Typography>
+          <Typography variant="body2" color="#3C4248">Drone Flying</Typography>
         </Box>
       </Snackbar>
     </Box>

@@ -2,25 +2,27 @@
 
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { useDroneStore } from "@/store/useDroneStore";
-import {  Typography, Paper } from "@mui/material";
+import { Typography, Paper } from "@mui/material";
 
 const COLORS = ["#00C49F", "#FF8042"];
 
 const DronePieChart = () => {
   const drones = useDroneStore((s) => s.drones);
+  const droneArray = Object.values(drones ?? {});
 
-  const active = Object.values(drones).filter((d) => d.properties.registration.startsWith("SD-B"));
-  const inactive = Object.values(drones).filter((d) => !d.properties.registration.startsWith("SD-B"));
+  const regs = Array.from(new Set(droneArray.map((d: any) => d.properties.registration)));
+  const active = regs.filter((r) => r.startsWith("SD-B")).length;
+  const inactive = regs.length - active;
 
   const data =
-    active.length + inactive.length === 0
+    regs.length === 0
       ? [
           { name: "Active", value: 6 },
           { name: "Inactive", value: 3 },
         ]
       : [
-          { name: "Active", value: active.length },
-          { name: "Inactive", value: inactive.length },
+          { name: "Active", value: active },
+          { name: "Inactive", value: inactive },
         ];
 
   return (
@@ -36,12 +38,11 @@ const DronePieChart = () => {
             cy="50%"
             outerRadius={90}
             innerRadius={40}
-            fill="#8884d8"
             dataKey="value"
             label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
           >
             {data.map((_, index) => (
-              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+              <Cell key={index} fill={COLORS[index % COLORS.length]} />
             ))}
           </Pie>
           <Tooltip formatter={(value: number) => `${value} drones`} />
@@ -51,5 +52,4 @@ const DronePieChart = () => {
     </Paper>
   );
 };
-
 export default DronePieChart;

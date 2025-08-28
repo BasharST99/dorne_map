@@ -11,7 +11,6 @@ import {
   useTheme,
 } from "@mui/material";
 import { Notifications as NotificationsIcon, Menu as MenuIcon } from "@mui/icons-material";
-import Image from "next/image";
 import ScreenIcon from "@/components/icons/Screen";
 import LanguageIcon from "@/components/icons/language";
 import Logo from "@/components/icons/logo"; 
