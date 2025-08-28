@@ -26,11 +26,10 @@ export function useMapbox(params: {
   const dronesDataRef = useRef<GeoJSON.FeatureCollection>({ type: "FeatureCollection", features: [] });
   const pathsDataRef  = useRef<GeoJSON.FeatureCollection>({ type: "FeatureCollection", features: [] });
 
-  // IMPORTANT: guard against double init (StrictMode/dev)
   const initializedRef = useRef(false);
 
 useEffect(() => {
-  if (mapRef.current) return; // already initialized
+  if (mapRef.current) return;
 
   let cancelled = false;
 

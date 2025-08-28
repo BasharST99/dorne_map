@@ -1,33 +1,26 @@
 import mapboxgl, { GeoJSONSource } from "mapbox-gl";
 import { loadImage } from "@/utils/mapUtils";
 
-// ===== Tune look & feel here =====
-const ICON_DIAMETER = 44;     // circle diameter in px
-const ICON_BORDER   = 4;      // darker ring thickness
-const ARROW_W       = 14;     // arrow base width (vertical)
-const ARROW_H       = 12;     // arrow length (points forward)
-const PADDING       = 6;      // extra canvas padding
+const ICON_DIAMETER = 44;     
+const ICON_BORDER   = 4; 
+const ARROW_W       = 14;    
+const ARROW_H       = 12;  
+const PADDING       = 6;   
 const GREEN         = "#28E34E";
 const GREEN_DARK    = "#1ba83a";
 const RED           = "#FF3B30";
 const RED_DARK      = "#CC2F26";
 
-// Optional: soft shadow under the puck (looks like your screenshot)
 const SHADOW_BLUR   = 8;
 const SHADOW_Y      = 2;
 const SHADOW_COLOR  = "rgba(0,0,0,0.35)";
 
-/**
- * Draw a composite icon (circle + ring + white drone glyph + triangular arrow).
- * We draw the arrow to the right of the circle and then rotate the whole bitmap
- * using Mapbox's "icon-rotate": ["get", "rotation"] so it follows the heading.
- */
+
 async function makeDroneBitmap(
   fill: string,
   ring: string,
   glyphImg: HTMLImageElement
 ) {
-  // canvas size (arrow sticks out to the right a bit)
   const W = ICON_DIAMETER + PADDING * 2 + ARROW_H;
   const H = ICON_DIAMETER + PADDING * 2;
 
@@ -39,30 +32,25 @@ async function makeDroneBitmap(
   const cx = PADDING + ICON_DIAMETER / 2;
   const cy = PADDING + ICON_DIAMETER / 2;
 
-  // shadow under the circle (optional, subtle)
   ctx.save();
   ctx.shadowColor = SHADOW_COLOR;
   ctx.shadowBlur = SHADOW_BLUR;
   ctx.shadowOffsetX = 0;
   ctx.shadowOffsetY = SHADOW_Y;
 
-  // ring (outer)
   ctx.beginPath();
   ctx.arc(cx, cy, ICON_DIAMETER / 2, 0, Math.PI * 2);
   ctx.fillStyle = ring;
   ctx.fill();
 
-  // reset shadow for inner shapes
   ctx.restore();
 
-  // circle (inner)
   ctx.beginPath();
   ctx.arc(cx, cy, ICON_DIAMETER / 2 - ICON_BORDER, 0, Math.PI * 2);
   ctx.fillStyle = fill;
   ctx.fill();
 
-  // arrow (simple triangle), attached to right edge of circle
-  const baseX = cx + ICON_DIAMETER / 2 - 1; // slight overlap to avoid gap
+  const baseX = cx + ICON_DIAMETER / 2 - 1; 
   const baseY = cy;
   ctx.beginPath();
   ctx.moveTo(baseX, baseY - ARROW_W / 2);
@@ -103,7 +91,6 @@ export async function addSourcesAndLayers(
   if (!map.hasImage("drone-green")) map.addImage("drone-green", bmpGreen, { pixelRatio: 2 });
   if (!map.hasImage("drone-red"))   map.addImage("drone-red",   bmpRed,   { pixelRatio: 2 });
 
-  // NOTE: Remove any old "drones-circles" layer — this icon already contains the circle.
 
   // Drone puck + arrow (entire icon rotates via feature.properties.rotation)
   map.addLayer({
@@ -128,11 +115,10 @@ export async function addSourcesAndLayers(
       "icon-allow-overlap": true,
       "icon-ignore-placement": true,
       "icon-rotation-alignment": "map",
-      "icon-rotate": ["get", "rotation"], // <-- dynamic heading
+      "icon-rotate": ["get", "rotation"], 
     },
   });
 
-  // Paths (colored by allowed)
   map.addLayer({
     id: "paths-layer",
     type: "line",

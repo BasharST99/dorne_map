@@ -58,13 +58,12 @@ function buildActivePerMinute(
 
   // Assign each sample to its minute bucket (by startTime if present)
   for (const s of samples) {
-    if (!s?.startTime) continue; // ignore unknown timestamps
+    if (!s?.startTime) continue; 
     const minuteStart = dayjs(s.startTime).startOf("minute").valueOf();
     const bucket = byKey.get(minuteStart);
     if (bucket) bucket.regs.add(s.properties.registration);
   }
 
-  // Return chart-ready data
   return buckets.map((b) => ({
     t: b.label,
     count: b.regs.size,

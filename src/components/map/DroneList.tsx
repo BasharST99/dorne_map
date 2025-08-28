@@ -22,7 +22,7 @@ type Feature = {
   type: "Feature";
   properties: {
     serial: string;
-    registration: string; // e.g. SD-CB
+    registration: string;
     Name?: string;
     altitude?: number;
     pilot?: string;
@@ -31,7 +31,7 @@ type Feature = {
   };
   geometry: {
     type: "Point";
-    coordinates: [number, number]; // [lng, lat]
+    coordinates: [number, number]; 
   };
   startTime?: number;
 };

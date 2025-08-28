@@ -28,7 +28,6 @@ export default function MapBox() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
-  // ==== STORE ====
   const dronesFromStore  = useDroneStore(s => s.drones);
   const selectedSerial   = useDroneStore(s => s.selectedSerial);
   const setSelectedSerial = useDroneStore(s => s.setSelectedSerial);
@@ -36,7 +35,6 @@ export default function MapBox() {
   const setPopupPosition  = useDroneStore(s => s.setPopupPosition);
   const hoveredDrone      = useDroneStore(s => s.hoveredDrone);
 
-  // Fleets + refs (prevents stale closures inside map handlers)
   const { fleets, fleetsRef } = useFleets(dronesFromStore);
   const hoveredRef = useRef<Feature | null>(null);
   useEffect(() => { hoveredRef.current = (hoveredDrone as any) ?? null; }, [hoveredDrone]);
@@ -46,7 +44,6 @@ export default function MapBox() {
     [fleets]
   );
 
-  // Map setup (sources, layers, handlers)
   const { mapRef, mapLoaded, dronesSourceRef, pathsSourceRef, dronesDataRef, pathsDataRef } =
     useMapbox({
       containerRef,
@@ -58,11 +55,9 @@ export default function MapBox() {
       setSelectedSerial,
     });
 
-  // Counts + snackbar
   const activeCount = useMemo(() => fleets.filter(f => isAllowed(f.registration)).length, [fleets]);
   useEffect(() => { setSnackOpen(true); }, [activeCount]);
 
-  // Batch buffers + upsert helpers
   const droneIndexRef = useRef<Map<string, number>>(new Map());
   const pathIndexRef  = useRef<Map<string, number>>(new Map());
   const flush = useRef(makeScheduler()).current;
@@ -111,7 +106,6 @@ export default function MapBox() {
     }
   }
 
-  // Rebuild batches when fleets change
   useEffect(() => {
     if (!mapLoaded) return;
 
@@ -133,7 +127,6 @@ export default function MapBox() {
     });
   }, [fleets, mapLoaded, flush, dronesSourceRef, pathsSourceRef, dronesDataRef, pathsDataRef]);
 
-  // Fly to selection
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded || !selectedSerial) return;
@@ -145,7 +138,6 @@ export default function MapBox() {
     });
   }, [selectedSerial, mapLoaded, fleets, mapRef]);
 
-  // Keep icon rotation aligned with bearing
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded) return;
