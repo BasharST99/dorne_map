@@ -5,25 +5,26 @@ import { useDroneStore } from "@/store/useDroneStore";
 import { Typography, Paper } from "@mui/material";
 
 const COLORS = ["#00C49F", "#FF8042"];
-
+type DroneFeature = {
+  properties: { registration: string };
+};
 const DronePieChart = () => {
   const drones = useDroneStore((s) => s.drones);
-  const droneArray = Object.values(drones ?? {});
+  const droneArray = Object.values(drones ?? {}) as DroneFeature[];
 
-  const regs = Array.from(new Set(droneArray.map((d: any) => d.properties.registration)));
-  const active = regs.filter((r) => r.startsWith("SD-B")).length;
+  const regs = Array.from(new Set(droneArray.map(d => d.properties.registration)));
+  const active = regs.filter(r => r.startsWith("SD-B")).length;
   const inactive = regs.length - active;
-
   const data =
     regs.length === 0
       ? [
-          { name: "Active", value: 6 },
-          { name: "Inactive", value: 3 },
-        ]
+        { name: "Active", value: 6 },
+        { name: "Inactive", value: 3 },
+      ]
       : [
-          { name: "Active", value: active },
-          { name: "Inactive", value: inactive },
-        ];
+        { name: "Active", value: active },
+        { name: "Inactive", value: inactive },
+      ];
 
   return (
     <Paper elevation={3} sx={{ backgroundColor: "#1e1e1e", p: 3, borderRadius: 2, overflow: "hidden" }}>

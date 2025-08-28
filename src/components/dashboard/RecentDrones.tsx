@@ -2,22 +2,29 @@
 
 import { Box, Card, CardContent, Typography, Grid } from "@mui/material";
 import { useDroneStore } from "@/store/useDroneStore";
-
+type DroneFeature = {
+  startTime?: number;
+  properties: {
+    registration: string;
+    serial: string;
+    Name?: string;
+    pilot?: string;
+  };
+};
 export default function RecentDrones() {
   const drones = useDroneStore((s) => s.drones);
-  const droneArray = Object.values(drones ?? {});
+  const droneArray = Object.values(drones ?? {}) as DroneFeature[];
 
-  // Pick the latest sample for each registration
-  const latestByReg = new Map<string, any>();
+  const latestByReg = new Map<string, DroneFeature>();
   for (const d of droneArray) {
     const reg = d.properties.registration;
     const ts = d.startTime ?? 0;
     const prev = latestByReg.get(reg);
-    if (!prev || (ts > (prev.startTime ?? 0))) latestByReg.set(reg, d);
+    if (!prev || ts > (prev.startTime ?? 0)) latestByReg.set(reg, d);
   }
 
   const recent = Array.from(latestByReg.values())
-    .sort((a, b) => (b.startTime || 0) - (a.startTime || 0))
+    .sort((a, b) => (b.startTime ?? 0) - (a.startTime ?? 0))
     .slice(0, 6);
 
   return (
@@ -26,8 +33,8 @@ export default function RecentDrones() {
         Recent Drones
       </Typography>
       <Grid container spacing={2}>
-        {recent.map((drone: any) => (
-          <Grid item xs={12} sm={6} md={4} key={drone.properties.registration}>
+        {recent.map((drone) => (
+          <Grid  key={drone.properties.registration}>
             <Card>
               <CardContent>
                 <Typography variant="subtitle1" fontWeight="bold">

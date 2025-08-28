@@ -58,7 +58,7 @@ function buildActivePerMinute(
 
   // Assign each sample to its minute bucket (by startTime if present)
   for (const s of samples) {
-    if (!s?.startTime) continue; 
+    if (!s?.startTime) continue;
     const minuteStart = dayjs(s.startTime).startOf("minute").valueOf();
     const bucket = byKey.get(minuteStart);
     if (bucket) bucket.regs.add(s.properties.registration);
@@ -195,8 +195,7 @@ export default function DashboardAnalytics() {
       </Stack>
 
       <Grid container spacing={2}>
-        {/* Live active drones (last 60 min) */}
-        <Grid item xs={12} md={8}>
+        <Grid >
           <Card sx={{ backgroundColor: "#1e1e1e" }}>
             <CardContent>
               <Typography variant="subtitle1" color="#ddd" sx={{ mb: 1 }}>
@@ -231,7 +230,7 @@ export default function DashboardAnalytics() {
         </Grid>
 
         {/* Top 5 registrations by message volume */}
-        <Grid item xs={12} md={4}>
+        <Grid >
           <Card sx={{ backgroundColor: "#1e1e1e", height: "100%" }}>
             <CardContent>
               <Typography variant="subtitle1" color="#ddd" sx={{ mb: 1 }}>
